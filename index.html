@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Starfly – Smooth 3D Navigation</title>
+  <title>Starfly – Crystal Collector</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { margin: 0; background: #000; overflow: hidden; font-family: 'Inter', sans-serif; }
@@ -17,8 +17,15 @@
       z-index: 100;
       pointer-events: none;
     }
+    #score-hud {
+      font-size: 24px;
+      color: #00d2ff;
+      text-shadow: 0 0 15px rgba(0, 210, 255, 0.7);
+      font-weight: 800;
+      margin-top: 5px;
+    }
 
-    /* Left Joystick: Rotation */
+    /* Left Joystick: Steering */
     #joy-container {
       position: fixed;
       bottom: 50px;
@@ -48,55 +55,41 @@
       position: fixed;
       bottom: 60px;
       right: 60px;
-      width: 100px;
-      height: 100px;
-      background: rgba(255, 215, 0, 0.15);
-      border: 2px solid #ffcc00;
+      width: 110px;
+      height: 110px;
+      background: rgba(255, 215, 0, 0.1);
+      border: 3px solid #ffcc00;
       border-radius: 50%;
       color: #ffcc00;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: bold;
+      font-weight: 900;
       text-transform: uppercase;
       letter-spacing: 2px;
       user-select: none;
       z-index: 1000;
-      box-shadow: 0 0 15px rgba(255, 215, 0, 0.2);
-      transition: background 0.2s, transform 0.1s;
+      box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);
     }
     #thrust-btn:active {
       background: rgba(255, 215, 0, 0.4);
-      transform: scale(0.95);
-    }
-
-    .label {
-      position: absolute;
-      width: 100%;
-      bottom: -35px;
-      text-align: center;
-      font-size: 10px;
-      color: #ffcc00;
-      letter-spacing: 1px;
-      opacity: 0.7;
+      transform: scale(0.92);
     }
   </style>
 </head>
 <body>
 
 <div id="hud">
-  <div class="text-2xl font-black text-amber-400 tracking-tighter italic">STARFLY</div>
-  <div id="pos-display" class="text-blue-300 font-mono text-xs opacity-60">X: 0 Y: 0 Z: 0</div>
+  <div class="text-xl font-black text-amber-400 italic tracking-tighter">STARFLY</div>
+  <div id="score-hud">CRYSTALS: 0</div>
+  <div id="pos-display" class="text-white font-mono text-[10px] opacity-40 mt-1">X: 0 Y: 0 Z: 0</div>
 </div>
 
-<!-- Steering -->
 <div id="joy-container">
   <div id="joy-knob"></div>
-  <div class="label">STEER (360°)</div>
 </div>
 
-<!-- Movement -->
-<div id="thrust-btn">Thrust</div>
+<div id="thrust-btn">THRUST</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
@@ -105,145 +98,151 @@
 
 /* ─── Scene & Camera ───────────────────────────────── */
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 4000);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 document.body.appendChild(renderer.domElement);
 
-/* ─── Star Particle System ─────────────────────────── */
-const starCount = 6000;
+/* ─── Background Star Field ────────────────────────── */
+const starCount = 8000;
 const starGeo = new THREE.BufferGeometry();
 const starPos = new Float32Array(starCount * 3);
-for (let i = 0; i < starCount * 3; i++) {
-    starPos[i] = (Math.random() - 0.5) * 3000;
-}
+for (let i = 0; i < starCount * 3; i++) starPos[i] = (Math.random() - 0.5) * 3500;
 starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-const starMat = new THREE.PointsMaterial({ 
-    color: 0xffffff, 
-    size: 1.5, 
-    transparent: true, 
-    opacity: 0.8,
-    sizeAttenuation: true 
-});
-const stars = new THREE.Points(starGeo, starMat);
+const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 1.2, transparent: true, opacity: 0.6 }));
 scene.add(stars);
 
 /* ─── Player (Golden-White Star) ───────────────────── */
 const playerGroup = new THREE.Group();
 scene.add(playerGroup);
 
-// Core
-const core = new THREE.Mesh(
-    new THREE.SphereGeometry(0.5, 32, 32),
+const playerCore = new THREE.Mesh(
+    new THREE.SphereGeometry(0.6, 32, 32),
     new THREE.MeshBasicMaterial({ color: 0xffffff })
 );
-playerGroup.add(core);
+playerGroup.add(playerCore);
 
-// Glow
+// Glow Sprite
 const canvas = document.createElement('canvas');
 canvas.width = 64; canvas.height = 64;
 const ctx = canvas.getContext('2d');
-const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-grad.addColorStop(0, 'white');
-grad.addColorStop(0.3, '#ffcc00');
-grad.addColorStop(1, 'transparent');
-ctx.fillStyle = grad; ctx.fillRect(0, 0, 64, 64);
-const glowMap = new THREE.CanvasTexture(canvas);
+const grad = ctx.createRadialGradient(32,32,0, 32,32,32);
+grad.addColorStop(0,'white'); grad.addColorStop(0.3,'#ffcc00'); grad.addColorStop(1,'transparent');
+ctx.fillStyle = grad; ctx.fillRect(0,0,64,64);
+const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), blending: THREE.AdditiveBlending }));
+glowSprite.scale.set(8, 8, 1);
+playerGroup.add(glowSprite);
 
-const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowMap, blending: THREE.AdditiveBlending }));
-glow.scale.set(7, 7, 1);
-playerGroup.add(glow);
+const pLight = new THREE.PointLight(0xffcc00, 2, 60);
+playerGroup.add(pLight);
 
-const light = new THREE.PointLight(0xffcc00, 2, 50);
-playerGroup.add(light);
+/* ─── Blue Crystal System ──────────────────────────── */
+const crystals = [];
+const MAX_CRYSTALS = 5;
+let score = 0;
+const SPAWN_DISTANCE = 45; // Approx distance for 3s travel at max speed
 
-/* ─── Navigation Logic ─────────────────────────────── */
+function spawnCrystal() {
+    const geo = new THREE.OctahedronGeometry(0.5, 0);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x00d2ff, wireframe: false });
+    const crystal = new THREE.Mesh(geo, mat);
+    
+    // Random spherical position around player
+    const phi = Math.random() * Math.PI * 2;
+    const theta = Math.random() * Math.PI;
+    const r = SPAWN_DISTANCE + (Math.random() * 10);
+    
+    crystal.position.set(
+        playerGroup.position.x + r * Math.sin(theta) * Math.cos(phi),
+        playerGroup.position.y + r * Math.sin(theta) * Math.sin(phi),
+        playerGroup.position.z + r * Math.cos(theta)
+    );
+    
+    // Tiny blue glow
+    const cLight = new THREE.PointLight(0x00d2ff, 1, 10);
+    crystal.add(cLight);
+    
+    scene.add(crystal);
+    crystals.push(crystal);
+}
+
+/* ─── Movement Logic ───────────────────────────────── */
 let thrustActive = false;
 let rotationInput = new THREE.Vector2(0, 0);
+const velocity = new THREE.Vector3();
+const rotationEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+const moveSpeed = 0.55;
+const rotateSpeed = 0.045;
+const damping = 0.96;
 
-// Joystick Logic (Rotation)
+// Controls
 const joyContainer = document.getElementById('joy-container');
 const joyKnob = document.getElementById('joy-knob');
+const thrustBtn = document.getElementById('thrust-btn');
 
 function handleJoystick(e) {
     e.preventDefault();
     const touch = e.touches ? e.touches[0] : e;
     const rect = joyContainer.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    
-    let dx = touch.clientX - centerX;
-    let dy = touch.clientY - centerY;
+    const dx = touch.clientX - (rect.left + 65);
+    const dy = touch.clientY - (rect.top + 65);
     const dist = Math.min(50, Math.sqrt(dx*dx + dy*dy));
     const angle = Math.atan2(dy, dx);
-    
-    const moveX = Math.cos(angle) * dist;
-    const moveY = Math.sin(angle) * dist;
-    
-    joyKnob.style.transform = `translate(calc(-50% + ${moveX}px), calc(-50% + ${moveY}px))`;
-    
-    // Y stick controls Pitch, X stick controls Yaw
-    rotationInput.set(-moveY / 50, -moveX / 50); 
-}
-
-function resetJoystick() {
-    joyKnob.style.transform = `translate(-50%, -50%)`;
-    rotationInput.set(0, 0);
+    joyKnob.style.transform = `translate(calc(-50% + ${Math.cos(angle)*dist}px), calc(-50% + ${Math.sin(angle)*dist}px))`;
+    rotationInput.set(-dy/50, -dx/50);
 }
 
 joyContainer.addEventListener('touchstart', handleJoystick);
-window.addEventListener('touchmove', (e) => { if(e.target === joyContainer || e.touches.length > 0) handleJoystick(e); });
-window.addEventListener('touchend', resetJoystick);
+window.addEventListener('touchmove', (e) => { if(e.touches[0].target === joyContainer || e.touches.length > 0) handleJoystick(e); });
+window.addEventListener('touchend', () => { joyKnob.style.transform = `translate(-50%,-50%)`; rotationInput.set(0,0); });
 
-// Thrust Logic (Movement)
-const thrustBtn = document.getElementById('thrust-btn');
-thrustBtn.addEventListener('mousedown', () => thrustActive = true);
 thrustBtn.addEventListener('touchstart', (e) => { e.preventDefault(); thrustActive = true; });
-window.addEventListener('mouseup', () => thrustActive = false);
 window.addEventListener('touchend', () => thrustActive = false);
 
 /* ─── Animation Loop ────────────────────────────────── */
-const velocity = new THREE.Vector3();
-const rotationEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-const moveSpeed = 0.5;
-const rotateSpeed = 0.04;
-const damping = 0.96;
-
 function animate() {
     requestAnimationFrame(animate);
 
-    // 1. Handle Rotation (Steering)
-    // We update an Euler object for smooth 360 rotation
+    // 1. Manage Crystal Spawning
+    while (crystals.length < MAX_CRYSTALS) {
+        spawnCrystal();
+    }
+
+    // 2. Rotation & Steering
     rotationEuler.x += rotationInput.x * rotateSpeed;
     rotationEuler.y += rotationInput.y * rotateSpeed;
     playerGroup.setRotationFromEuler(rotationEuler);
 
-    // 2. Handle Thrust (Movement)
+    // 3. Thrust & Velocity
     if (thrustActive) {
-        // Get the direction the player is currently facing
-        const direction = new THREE.Vector3(0, 0, -1);
-        direction.applyQuaternion(playerGroup.quaternion);
-        velocity.add(direction.multiplyScalar(moveSpeed));
+        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(playerGroup.quaternion);
+        velocity.add(dir.multiplyScalar(moveSpeed));
     }
-
-    // 3. Apply Velocity & Friction
     playerGroup.position.add(velocity);
     velocity.multiplyScalar(damping);
 
-    // 4. Smooth Camera Follow
-    // Camera stays behind the player's current orientation
-    const relativeCameraOffset = new THREE.Vector3(0, 3, 15);
-    const cameraOffset = relativeCameraOffset.applyQuaternion(playerGroup.quaternion);
-    const targetCamPos = playerGroup.position.clone().add(cameraOffset);
-    
-    camera.position.lerp(targetCamPos, 0.1);
-    camera.lookAt(playerGroup.position);
+    // 4. Collection Detection
+    for (let i = crystals.length - 1; i >= 0; i--) {
+        const crystal = crystals[i];
+        crystal.rotation.y += 0.05; // Spin crystal
+        
+        const dist = playerGroup.position.distanceTo(crystal.position);
+        if (dist < 2.2) { // Collection radius
+            scene.remove(crystal);
+            crystals.splice(i, 1);
+            score++;
+            document.getElementById('score-hud').innerText = `CRYSTALS: ${score}`;
+        }
+    }
 
-    // 5. Parallax Stars
+    // 5. Camera & Parallax
+    const camOffset = new THREE.Vector3(0, 3, 14).applyQuaternion(playerGroup.quaternion);
+    camera.position.lerp(playerGroup.position.clone().add(camOffset), 0.1);
+    camera.lookAt(playerGroup.position);
     stars.position.copy(playerGroup.position).multiplyScalar(0.9);
 
-    // 6. Update HUD
+    // 6. HUD
     const p = playerGroup.position;
     document.getElementById('pos-display').innerText = `X:${Math.round(p.x)} Y:${Math.round(p.y)} Z:${Math.round(p.z)}`;
 
