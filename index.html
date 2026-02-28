@@ -2,283 +2,245 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Starfly x Spacentity – 3D Star Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Starfly 3D – Dual Stick Navigation</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #000; overflow-x: hidden; font-family: sans-serif; color: white; }
-    canvas { position: fixed; top: 0; left: 0; outline: none; z-index: 0; }
+    body { margin: 0; background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+    canvas { display: block; }
 
-    /* HUD overlay */
+    /* HUD */
     #hud {
       position: fixed;
       top: 20px;
       left: 20px;
-      z-index: 20;
-      color: rgba(180,220,255,0.85);
+      z-index: 100;
       pointer-events: none;
-      text-shadow: 0 0 10px #4af;
+      text-shadow: 0 0 10px rgba(0, 150, 255, 0.8);
     }
 
-    /* Mobile virtual joystick */
-    #joystick-zone {
+    /* Joystick Containers */
+    .joystick-container {
       position: fixed;
       bottom: 40px;
-      left: 40px;
-      width: 100px;
-      height: 100px;
+      width: 120px;
+      height: 120px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 2px solid rgba(255, 215, 0, 0.2);
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 215, 0, 0.3);
       touch-action: none;
-      z-index: 30;
-      display: none; 
+      z-index: 1000;
     }
-    #joystick-knob {
+    #left-ctrl { left: 40px; }
+    #right-ctrl { right: 40px; }
+
+    .knob {
       position: absolute;
-      width: 40px;
-      height: 40px;
+      width: 50px;
+      height: 50px;
+      background: radial-gradient(circle, #fff 0%, #ffcc00 100%);
       border-radius: 50%;
-      background: rgba(255, 215, 0, 0.5);
       top: 50%; left: 50%;
-      transform: translate(-50%,-50%);
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+      pointer-events: none;
     }
 
-    .content-wrapper {
-      position: relative;
-      z-index: 10;
-      pointer-events: none; /* Let clicks pass to canvas unless on footer */
+    .label {
+      position: absolute;
+      width: 100%;
+      text-align: center;
+      bottom: -30px;
+      color: #ffcc00;
+      font-size: 10px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
     }
-    footer, footer a { pointer-events: auto; }
   </style>
 </head>
 <body>
 
-<canvas id="bg"></canvas>
-
 <div id="hud">
-  <div class="text-xl font-bold tracking-widest text-amber-400">STARFLY</div>
-  <div id="pos-hud" class="font-mono text-sm opacity-80">Position: 0, 0, 0</div>
-  <div class="mt-2 text-xs text-blue-300 opacity-60">
-    WASD - Move | Space/Shift - Elevate
-  </div>
+  <div class="text-2xl font-bold text-amber-400 tracking-tighter">STARFLY</div>
+  <div id="pos-display" class="text-blue-300 font-mono text-xs mt-1">POS: 0, 0, 0</div>
 </div>
 
-<div id="joystick-zone">
-  <div id="joystick-knob"></div>
+<!-- Left Joystick: Up/Down/Left/Right -->
+<div id="left-ctrl" class="joystick-container">
+  <div id="left-knob" class="knob"></div>
+  <div class="label">Move & Elevate</div>
 </div>
 
-<div class="content-wrapper">
-    <!-- Spacer to allow flying experience before reaching footer -->
-    <div style="height: 200vh;"></div>
-
-    <footer class="bg-black/80 backdrop-blur-md text-center text-gray-400 py-10 relative">
-        <div class="container mx-auto">
-            <div class="flex flex-wrap justify-center gap-x-8 gap-y-4 mb-6">
-                <a class="hover:text-white transition-colors duration-200" href="https://spacentity.artstation.com" target="_blank">Artstation</a>
-                <a class="hover:text-white transition-colors duration-200" href="https://www.instagram.com/sachsanjoy/" target="_blank">Instagram</a>
-                <a class="hover:text-white transition-colors duration-200" href="https://www.linkedin.com/in/sachusanjayan/" target="_blank">Linkedin</a>
-                <a class="hover:text-white transition-colors duration-200" href="https://pixabay.com/users/sachsanjoy-8333341/" target="_blank">Pixabay</a>
-                <a class="hover:text-white transition-colors duration-200" href="https://www.youtube.com/channel/UCNXIBZXpi9L4uxqOEFkksAw" target="_blank">Youtube</a>
-            </div>
-            <div class="text-amber-400 text-sm tracking-widest uppercase">
-                Spacentity © 2026
-            </div>
-        </div>
-    </footer>
+<!-- Right Joystick: In/Out -->
+<div id="right-ctrl" class="joystick-container">
+  <div id="right-knob" class="knob"></div>
+  <div class="label">Forward / Back</div>
 </div>
 
-<!-- Three.js Library -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
 'use strict';
 
-/* ─── Initial Setup (Spacentity Concept) ──────────────── */
+/* ─── Scene Setup ───────────────────────────────────── */
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
-const renderer = new THREE.WebGLRenderer({
-    canvas: document.querySelector('#bg'),
-    antialias: true
-});
+scene.fog = new THREE.FogExp2(0x000000, 0.001);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 3000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
+document.body.appendChild(renderer.domElement);
 
-/* ─── Background Star System (From your concept) ──────── */
-const starGeometry = new THREE.BufferGeometry();
-const starCount = 5000;
-const positions = new Float32Array(starCount * 3);
-
-for (let i = 0; i < starCount * 3; i++) {
-    positions[i] = (Math.random() - 0.5) * 2000;
-}
-starGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-const starMaterial = new THREE.PointsMaterial({
-    color: 0xffffff,
-    size: 0.8,
-    transparent: true,
-    opacity: 0.9
-});
-
-const stars = new THREE.Points(starGeometry, starMaterial);
+/* ─── Background Starfield (Particle System) ───────── */
+const starCount = 8000;
+const starGeo = new THREE.BufferGeometry();
+const starPos = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount * 3; i++) starPos[i] = (Math.random() - 0.5) * 2500;
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.2, transparent: true, opacity: 0.8 });
+const stars = new THREE.Points(starGeo, starMat);
 scene.add(stars);
 
-/* ─── Golden-White Player Star ────────────────────────── */
+/* ─── Player Star (Golden-White) ────────────────────── */
 const playerGroup = new THREE.Group();
 scene.add(playerGroup);
 
-// The Core (White)
-const coreGeo = new THREE.SphereGeometry(0.5, 32, 32);
-const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-const playerCore = new THREE.Mesh(coreGeo, coreMat);
-playerGroup.add(playerCore);
+const core = new THREE.Mesh(
+    new THREE.SphereGeometry(0.6, 24, 24),
+    new THREE.MeshBasicMaterial({ color: 0xffffff })
+);
+playerGroup.add(core);
 
-// The Glow (Golden-White Sprite)
-const createGlowTexture = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 64; canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-    grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
-    grad.addColorStop(0.3, 'rgba(255, 215, 0, 0.6)');
-    grad.addColorStop(1, 'rgba(255, 150, 0, 0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 64, 64);
-    return new THREE.CanvasTexture(canvas);
-};
+const canvas = document.createElement('canvas');
+canvas.width = 64; canvas.height = 64;
+const ctx = canvas.getContext('2d');
+const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+grad.addColorStop(0.2, 'rgba(255, 215, 0, 0.8)');
+grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+ctx.fillStyle = grad; ctx.fillRect(0, 0, 64, 64);
+const glowMap = new THREE.CanvasTexture(canvas);
 
-const glowMat = new THREE.SpriteMaterial({
-    map: createGlowTexture(),
-    blending: THREE.AdditiveBlending,
-    transparent: true
-});
-const glowSprite = new THREE.Sprite(glowMat);
-glowSprite.scale.set(6, 6, 1);
-playerGroup.add(glowSprite);
+const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowMap, blending: THREE.AdditiveBlending }));
+glow.scale.set(8, 8, 1);
+playerGroup.add(glow);
 
-// Golden Light
-const playerLight = new THREE.PointLight(0xffd700, 2, 50);
-playerGroup.add(playerLight);
+const pLight = new THREE.PointLight(0xffcc00, 2, 60);
+playerGroup.add(pLight);
 
-/* ─── Shooting Stars (From your concept) ──────────────── */
+/* ─── Shooting Stars ────────────────────────────────── */
 const shootingStars = [];
-function addShootingStar() {
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 0.5, 0.5, 0]), 3)); 
-    const material = new THREE.PointsMaterial({ color: 0xffffff, size: 2, transparent: true, opacity: 0.8 });
-    const s = new THREE.Points(geometry, material);
-
-    // Position relative to player so they are always visible
-    s.position.set(
-        playerGroup.position.x + (Math.random() - 0.5) * 1000,
-        playerGroup.position.y + (Math.random() - 0.5) * 1000,
-        playerGroup.position.z + (Math.random() - 0.5) * 1000
-    );
-
-    s.velocity = new THREE.Vector3((Math.random() - 0.5) * 40, -Math.random() * 40, (Math.random() - 0.5) * 10);
-    scene.add(s);
-    shootingStars.push(s);
+function createShootingStar() {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0,0,0, 0,0,2]), 3));
+    const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true });
+    const line = new THREE.Line(geo, mat);
+    line.position.set((Math.random()-0.5)*1000, (Math.random()-0.5)*1000, (Math.random()-0.5)*1000);
+    line.velocity = new THREE.Vector3((Math.random()-0.5)*50, (Math.random()-0.5)*50, (Math.random()-0.5)*50);
+    scene.add(line);
+    shootingStars.push(line);
 }
 
-/* ─── Controls & Movement ───────────────────────────── */
+/* ─── Input Logic ───────────────────────────────────── */
 const keys = {};
-window.addEventListener('keydown', (e) => keys[e.code] = true);
-window.addEventListener('keyup', (e) => keys[e.code] = false);
+window.addEventListener('keydown', e => keys[e.code] = true);
+window.addEventListener('keyup', e => keys[e.code] = false);
 
-let mouseX = 0, mouseY = 0;
-window.addEventListener('mousemove', (e) => {
-    mouseX = (e.clientX / window.innerWidth - 0.5) * 15;
-    mouseY = (e.clientY / window.innerHeight - 0.5) * 15;
-});
+const leftInput = new THREE.Vector2();  // x, y
+const rightInput = new THREE.Vector2(); // y used for z-axis
 
-// Joystick
-const joystickZone = document.getElementById('joystick-zone');
-const joystickKnob = document.getElementById('joystick-knob');
-let joystickActive = false;
-let joystickDir = new THREE.Vector2();
+function handleJoystick(id, knobId, inputVec) {
+    const el = document.getElementById(id);
+    const knob = document.getElementById(knobId);
+    
+    const handleMove = (e) => {
+        const touch = e.touches ? e.touches[0] : e;
+        const rect = el.getBoundingClientRect();
+        const center = { x: rect.left + 60, y: rect.top + 60 };
+        let dx = touch.clientX - center.x;
+        let dy = touch.clientY - center.y;
+        const dist = Math.min(50, Math.sqrt(dx*dx + dy*dy));
+        const angle = Math.atan2(dy, dx);
+        
+        const moveX = Math.cos(angle) * dist;
+        const moveY = Math.sin(angle) * dist;
+        
+        knob.style.transform = `translate(calc(-50% + ${moveX}px), calc(-50% + ${moveY}px))`;
+        inputVec.set(moveX / 50, -moveY / 50); // Normalize to -1 to 1
+    };
 
-if ('ontouchstart' in window) joystickZone.style.display = 'block';
+    const handleEnd = () => {
+        knob.style.transform = `translate(-50%, -50%)`;
+        inputVec.set(0, 0);
+    };
 
-joystickZone.addEventListener('touchstart', () => joystickActive = true);
-window.addEventListener('touchmove', (e) => {
-    if (!joystickActive) return;
-    const touch = e.touches[0];
-    const rect = joystickZone.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    const dx = touch.clientX - centerX;
-    const dy = touch.clientY - centerY;
-    const dist = Math.min(dist, 50);
-    joystickDir.set(dx / 50, dy / 50);
-    joystickKnob.style.transform = `translate(calc(-50% + ${joystickDir.x * 40}px), calc(-50% + ${joystickDir.y * 40}px))`;
-});
-window.addEventListener('touchend', () => {
-    joystickActive = false;
-    joystickDir.set(0, 0);
-    joystickKnob.style.transform = `translate(-50%, -50%)`;
-});
+    el.addEventListener('touchstart', e => { e.preventDefault(); handleMove(e); }, {passive: false});
+    window.addEventListener('touchmove', e => { if(inputVec.lengthSq() > 0 || e.target === el) handleMove(e); }, {passive: false});
+    window.addEventListener('touchend', handleEnd);
+}
 
-/* ─── Animation Loop ─────────────────────────────────── */
+handleJoystick('left-ctrl', 'left-knob', leftInput);
+handleJoystick('right-ctrl', 'right-knob', rightInput);
+
+/* ─── Animation Loop ────────────────────────────────── */
 const velocity = new THREE.Vector3();
-const clock = new THREE.Clock();
+const speed = 0.8;
+const friction = 0.92;
 
-const animate = () => {
+function animate() {
     requestAnimationFrame(animate);
-    const delta = clock.getDelta();
 
-    // 1. Calculate Movement
+    // 1. Keyboard Inputs
     const move = new THREE.Vector3();
-    if (keys['KeyW'] || keys['ArrowUp']) move.z -= 1;
-    if (keys['KeyS'] || keys['ArrowDown']) move.z += 1;
-    if (keys['KeyA'] || keys['ArrowLeft']) move.x -= 1;
-    if (keys['KeyD'] || keys['ArrowRight']) move.x += 1;
+    if (keys['KeyW']) move.z -= 1;
+    if (keys['KeyS']) move.z += 1;
+    if (keys['KeyA']) move.x -= 1;
+    if (keys['KeyD']) move.x += 1;
     if (keys['Space']) move.y += 1;
     if (keys['ShiftLeft']) move.y -= 1;
 
-    if (joystickActive) {
-        move.x += joystickDir.x;
-        move.z += joystickDir.y;
-    }
+    // 2. Joystick Inputs (Override or Add)
+    move.x += leftInput.x;
+    move.y += leftInput.y;
+    move.z -= rightInput.y; // Right stick Y controls Z axis
 
-    if (move.lengthSq() > 0) move.normalize();
-    velocity.lerp(move.multiplyScalar(0.8), 0.1);
+    if (move.length() > 0) move.normalize().multiplyScalar(speed);
+
+    // 3. Physics
+    velocity.add(move);
+    velocity.multiplyScalar(friction);
     playerGroup.position.add(velocity);
 
-    // 2. Camera Following
-    const targetCamX = playerGroup.position.x + mouseX;
-    const targetCamY = playerGroup.position.y + 5 - mouseY;
-    const targetCamZ = playerGroup.position.z + 15;
-    
-    camera.position.lerp(new THREE.Vector3(targetCamX, targetCamY, targetCamZ), 0.05);
+    // 4. Camera Follow
+    const camTarget = new THREE.Vector3(
+        playerGroup.position.x,
+        playerGroup.position.y + 4,
+        playerGroup.position.z + 12
+    );
+    camera.position.lerp(camTarget, 0.1);
     camera.lookAt(playerGroup.position);
 
-    // 3. Background Stars Parallax
-    stars.rotation.x += 0.0001;
-    stars.rotation.y += 0.0001;
-    stars.position.copy(playerGroup.position).multiplyScalar(0.95); // Follow player slightly for infinite feel
-
-    // 4. Shooting Stars
-    if (Math.random() < 0.02) addShootingStar();
+    // 5. Star Parallax (Infinite Feel)
+    stars.position.copy(playerGroup.position).multiplyScalar(0.9);
+    
+    // 6. Shooting Stars
+    if (Math.random() < 0.05) createShootingStar();
     shootingStars.forEach((s, i) => {
         s.position.add(s.velocity);
-        if (s.position.distanceTo(playerGroup.position) > 1500) {
+        s.material.opacity -= 0.01;
+        if (s.material.opacity <= 0) {
             scene.remove(s);
             shootingStars.splice(i, 1);
         }
     });
 
-    // 5. Glow Pulse
-    const pulse = 1 + Math.sin(Date.now() * 0.005) * 0.1;
-    glowSprite.scale.set(6 * pulse, 6 * pulse, 1);
-
-    // 6. HUD Update
-    document.getElementById('pos-hud').textContent = 
-        `Position: ${Math.round(playerGroup.position.x)}, ${Math.round(playerGroup.position.y)}, ${Math.round(playerGroup.position.z)}`;
+    // 7. Update HUD
+    const p = playerGroup.position;
+    document.getElementById('pos-display').innerText = `POS: ${Math.round(p.x)}, ${Math.round(p.y)}, ${Math.round(p.z)}`;
 
     renderer.render(scene, camera);
-};
+}
 
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -288,5 +250,6 @@ window.addEventListener('resize', () => {
 
 animate();
 </script>
+
 </body>
 </html>
