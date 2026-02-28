@@ -2,44 +2,46 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Starfly – 3D Star Map</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #000; overflow: hidden; font-family: sans-serif; }
+    body { background: #000; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     canvas { display: block; }
 
     /* HUD overlay */
     #hud {
       position: fixed;
-      top: 12px;
-      left: 12px;
-      color: rgba(180,220,255,0.85);
-      font-size: 13px;
+      top: 20px;
+      left: 20px;
+      color: rgba(180,220,255,0.9);
+      font-size: 14px;
       pointer-events: none;
-      text-shadow: 0 0 6px #4af;
+      text-shadow: 0 0 8px #4af;
       line-height: 1.6;
+      letter-spacing: 1px;
     }
 
     /* Mobile virtual joystick */
     #joystick-zone {
       position: fixed;
-      bottom: 24px;
-      left: 24px;
+      bottom: 40px;
+      left: 40px;
       width: 120px;
       height: 120px;
       border-radius: 50%;
-      background: rgba(100,180,255,0.12);
-      border: 2px solid rgba(100,180,255,0.35);
+      background: rgba(100,180,255,0.1);
+      border: 2px solid rgba(100,180,255,0.3);
       touch-action: none;
-      display: none;          /* shown only on touch devices */
+      display: none; 
     }
     #joystick-knob {
       position: absolute;
-      width: 44px;
-      height: 44px;
+      width: 50px;
+      height: 50px;
       border-radius: 50%;
-      background: rgba(100,180,255,0.55);
+      background: rgba(100,180,255,0.4);
+      box-shadow: 0 0 15px rgba(100,180,255,0.5);
       top: 50%; left: 50%;
       transform: translate(-50%,-50%);
       pointer-events: none;
@@ -49,10 +51,11 @@
 <body>
 
 <div id="hud">
-  <div>STARFLY</div>
+  <div style="font-weight: bold; font-size: 18px; margin-bottom: 4px;">STARFLY</div>
   <div id="pos-hud">Position: 0, 0, 0</div>
-  <div style="margin-top:6px;font-size:11px;color:rgba(140,200,255,0.6);">
-    WASD – move &nbsp;|&nbsp; Space/Shift – up/down
+  <div style="margin-top:10px; font-size:11px; color:rgba(140,200,255,0.6);">
+    WASD / Arrows – move <br>
+    Space / Shift – up / down
   </div>
 </div>
 
@@ -61,353 +64,219 @@
 </div>
 
 <!-- Three.js r158 via CDN -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.158.0/three.min.js"></script>
 
 <script>
 'use strict';
 
-/* ─── Scene ─────────────────────────────────────────── */
-const scene    = new THREE.Scene();
-scene.fog      = new THREE.FogExp2(0x000010, 0.0012);
+/* ─── Scene & Camera ───────────────────────────────── */
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x000005, 0.0015);
 
-/* ─── Camera ─────────────────────────────────────────── */
-const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 2000);
-camera.position.set(0, 6, 18);   // start slightly behind and above player
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 3000);
+// Camera will be positioned dynamically in the loop
 
-/* ─── Renderer ───────────────────────────────────────── */
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-/* ─── Resize handler ─────────────────────────────────── */
-window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
+/* ─── Lighting ─────────────────────────────────────── */
+const ambient = new THREE.AmbientLight(0x4040ff, 0.5);
+scene.add(ambient);
 
-/* ─── Lighting ───────────────────────────────────────── */
-scene.add(new THREE.AmbientLight(0x223355, 2.5));
-const pointLight = new THREE.PointLight(0xffcc44, 3, 60);
-scene.add(pointLight);   // will follow the player
+const playerLight = new THREE.PointLight(0xffdd66, 2, 50);
+scene.add(playerLight);
 
-/* ─── Background stars (particle field) ─────────────── */
-const stars = (function buildStarField() {
-  const COUNT   = 5000;
-  const RANGE   = 800;
+/* ─── Background Star Field ────────────────────────── */
+let starField;
+function buildStarField() {
+  const COUNT = 6000;
   const positions = new Float32Array(COUNT * 3);
-  const colors    = new Float32Array(COUNT * 3);
-  const sizes     = new Float32Array(COUNT);
-
-  // Subtle palette: blue-white, yellow-white, faint red
-  const palette = [
-    new THREE.Color(0.9, 0.9, 1.0),
-    new THREE.Color(1.0, 1.0, 0.85),
-    new THREE.Color(0.8, 0.9, 1.0),
-    new THREE.Color(1.0, 0.85, 0.7),
-    new THREE.Color(0.7, 0.8, 1.0),
-  ];
-
+  const colors = new Float32Array(COUNT * 3);
+  
   for (let i = 0; i < COUNT; i++) {
-    positions[i * 3]     = (Math.random() - 0.5) * RANGE;
-    positions[i * 3 + 1] = (Math.random() - 0.5) * RANGE;
-    positions[i * 3 + 2] = (Math.random() - 0.5) * RANGE;
-
-    const c = palette[Math.floor(Math.random() * palette.length)];
-    const brightness = 0.4 + Math.random() * 0.6;
-    colors[i * 3]     = c.r * brightness;
-    colors[i * 3 + 1] = c.g * brightness;
-    colors[i * 3 + 2] = c.b * brightness;
-
-    sizes[i] = 0.5 + Math.random() * 2.5;
+    positions[i*3] = (Math.random() - 0.5) * 2000;
+    positions[i*3+1] = (Math.random() - 0.5) * 2000;
+    positions[i*3+2] = (Math.random() - 0.5) * 2000;
+    
+    const r = 0.8 + Math.random() * 0.2;
+    const g = 0.8 + Math.random() * 0.2;
+    const b = 1.0;
+    colors[i*3] = r; colors[i*3+1] = g; colors[i*3+2] = b;
   }
-
+  
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3));
-  geo.setAttribute('size',     new THREE.BufferAttribute(sizes,     1));
-
-  // Custom shader material for round, glowing points
-  const mat = new THREE.ShaderMaterial({
-    vertexColors: true,
-    transparent: true,
-    depthWrite: false,
-    vertexShader: `
-      attribute float size;
-      varying vec3 vColor;
-      void main() {
-        vColor = color;
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = size * (300.0 / -mvPosition.z);
-        gl_Position  = projectionMatrix * mvPosition;
-      }
-    `,
-    fragmentShader: `
-      varying vec3 vColor;
-      void main() {
-        float d = length(gl_PointCoord - vec2(0.5));
-        if (d > 0.5) discard;
-        float alpha = 1.0 - smoothstep(0.2, 0.5, d);
-        gl_FragColor = vec4(vColor, alpha);
-      }
-    `,
-  });
-
-  const pts = new THREE.Points(geo, mat);
-  scene.add(pts);
-  return pts;
-}());
-
-/* ─── Bright foreground stars (glowing spheres) ─────── */
-(function buildNearbyStars() {
-  const NEAR_COUNT = 80;
-  const RANGE      = 180;
-  const geo  = new THREE.SphereGeometry(0.4, 8, 8);
-
-  for (let i = 0; i < NEAR_COUNT; i++) {
-    const brightness = 0.5 + Math.random() * 0.5;
-    const hue = Math.random();
-    const color = new THREE.Color().setHSL(hue, 0.7, 0.6 * brightness);
-    const mat   = new THREE.MeshBasicMaterial({ color });
-    const mesh  = new THREE.Mesh(geo, mat);
-    mesh.position.set(
-      (Math.random() - 0.5) * RANGE,
-      (Math.random() - 0.5) * RANGE,
-      (Math.random() - 0.5) * RANGE,
-    );
-    mesh.scale.setScalar(0.3 + Math.random() * 1.4);
-    scene.add(mesh);
-  }
-}());
-
-/* ─── Player star ────────────────────────────────────── */
-const playerGeo = new THREE.SphereGeometry(0.6, 32, 32);
-const playerMat = new THREE.MeshBasicMaterial({ color: 0xFFD700 });
-const player    = new THREE.Mesh(playerGeo, playerMat);
-scene.add(player);
-
-// Glow sprite around the player
-const glowCanvas = (function makeGlowTexture() {
-  const size = 128;
-  const c    = document.createElement('canvas');
-  c.width = c.height = size;
-  const ctx  = c.getContext('2d');
-  const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
-  grad.addColorStop(0,   'rgba(255,215,0,0.9)');
-  grad.addColorStop(0.3, 'rgba(255,200,80,0.5)');
-  grad.addColorStop(1,   'rgba(80,30,0,0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, size, size);
-  return new THREE.CanvasTexture(c);
-}());
-
-const glowMat    = new THREE.SpriteMaterial({ map: glowCanvas, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
-const glowSprite = new THREE.Sprite(glowMat);
-glowSprite.scale.set(6, 6, 1);
-player.add(glowSprite);
-
-/* ─── Player tail (line trail) ──────────────────────── */
-const TAIL_LENGTH = 20;
-const tailInitPoints = [];
-for (let i = 0; i < TAIL_LENGTH; i++) tailInitPoints.push(new THREE.Vector3());
-const tailGeo = new THREE.BufferGeometry().setFromPoints(tailInitPoints);
-const tailMat = new THREE.LineBasicMaterial({
-  color: 0xFFD700,
-  transparent: true,
-  opacity: 0.6,
-  depthWrite: false,
-  blending: THREE.AdditiveBlending,
-});
-const tail = new THREE.Line(tailGeo, tailMat);
-tail.frustumCulled = false;
-scene.add(tail);
-const tailHistory = [];
-
-/* ─── Shooting stars ─────────────────────────────────── */
-const shootingStars = [];
-function addShootingStar() {
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 0.5, 0.5, 0]), 3));
-  const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 2, transparent: true, opacity: 0.7 });
-  const s   = new THREE.Points(geo, mat);
-  s.position.set(
-    (Math.random() - 0.5) * 1000,
-    (Math.random() - 0.5) * 1000,
-    (Math.random() - 0.5) * 1000,
-  );
-  s.velocity = new THREE.Vector3(
-    (Math.random() - 0.5) * 30,
-    -Math.random() * 30,
-    (Math.random() - 0.5) * 5,
-  );
-  scene.add(s);
-  shootingStars.push(s);
-  if (shootingStars.length > 10) {
-    const old = shootingStars.shift();
-    scene.remove(old);
-  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  
+  const mat = new THREE.PointsMaterial({ size: 1.5, vertexColors: true, transparent: true, opacity: 0.8 });
+  starField = new THREE.Points(geo, mat);
+  scene.add(starField);
 }
-setInterval(addShootingStar, 2000);
+buildStarField();
 
-/* ─── Mouse camera influence ─────────────────────────── */
-let mouseX = 0, mouseY = 0;
-document.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
+/* ─── Player Setup ─────────────────────────────────── */
+const playerGroup = new THREE.Group();
+scene.add(playerGroup);
 
-/* ─── Movement state ─────────────────────────────────── */
+const playerGeo = new THREE.SphereGeometry(0.5, 16, 16);
+const playerMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+const playerMesh = new THREE.Mesh(playerGeo, playerMat);
+playerGroup.add(playerMesh);
+
+// Player Glow
+const spriteMat = new THREE.SpriteMaterial({
+  map: generateGlowTexture(),
+  color: 0xffaa00,
+  transparent: true,
+  blending: THREE.AdditiveBlending
+});
+const sprite = new THREE.Sprite(spriteMat);
+sprite.scale.set(5, 5, 1);
+playerGroup.add(sprite);
+
+function generateGlowTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.2, 'rgba(255,255,255,0.8)');
+  grad.addColorStop(0.5, 'rgba(255,200,0,0.2)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(canvas);
+}
+
+/* ─── Tail Trail ───────────────────────────────────── */
+const MAX_TRAIL_POINTS = 30;
+const trailPositions = new Float32Array(MAX_TRAIL_POINTS * 3);
+const trailGeo = new THREE.BufferGeometry();
+trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+const trailMat = new THREE.LineBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.5 });
+const trailLine = new THREE.Line(trailGeo, trailMat);
+scene.add(trailLine);
+
+const trailHistory = [];
+
+/* ─── Controls ─────────────────────────────────────── */
 const keys = {};
-window.addEventListener('keydown', e => { keys[e.code] = true; });
-window.addEventListener('keyup',   e => { keys[e.code] = false; });
+window.addEventListener('keydown', e => keys[e.code] = true);
+window.addEventListener('keyup', e => keys[e.code] = false);
 
-const SPEED       = 0.18;
-const playerVel   = new THREE.Vector3();   // for smooth damping
+let mouseX = 0, mouseY = 0;
+window.addEventListener('mousemove', e => {
+  mouseX = (e.clientX / window.innerWidth) - 0.5;
+  mouseY = (e.clientY / window.innerHeight) - 0.5;
+});
 
-/* Camera offset in local space: behind and above the player */
-const CAM_OFFSET = new THREE.Vector3(0, 5, 14);
-
-/* ─── Touch / virtual joystick ───────────────────────── */
+// Joystick Logic
 const joystickZone = document.getElementById('joystick-zone');
 const joystickKnob = document.getElementById('joystick-knob');
-const joystick     = { active: false, id: null, base: new THREE.Vector2(), delta: new THREE.Vector2() };
-const KNOB_RADIUS  = 38;   // px
+let joystickActive = false;
+let joystickVector = new THREE.Vector2(0, 0);
 
-function isTouchDevice() {
-  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-}
-if (isTouchDevice()) {
+if ('ontouchstart' in window) {
   joystickZone.style.display = 'block';
 }
 
 joystickZone.addEventListener('touchstart', e => {
-  e.preventDefault();
-  const touch = e.changedTouches[0];
-  joystick.active = true;
-  joystick.id     = touch.identifier;
-  const rect      = joystickZone.getBoundingClientRect();
-  joystick.base.set(rect.left + rect.width / 2, rect.top + rect.height / 2);
-}, { passive: false });
+  joystickActive = true;
+}, {passive: false});
 
 window.addEventListener('touchmove', e => {
-  if (!joystick.active) return;
-  for (const touch of e.changedTouches) {
-    if (touch.identifier !== joystick.id) continue;
-    const dx = touch.clientX - joystick.base.x;
-    const dy = touch.clientY - joystick.base.y;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    const clampedDist = Math.min(dist, KNOB_RADIUS);
-    const angle = Math.atan2(dy, dx);
-    joystick.delta.set(
-      Math.cos(angle) * clampedDist / KNOB_RADIUS,
-      Math.sin(angle) * clampedDist / KNOB_RADIUS,
-    );
-    joystickKnob.style.transform =
-      `translate(calc(-50% + ${Math.cos(angle)*clampedDist}px), calc(-50% + ${Math.sin(angle)*clampedDist}px))`;
-    break;
-  }
-}, { passive: true });
+  if (!joystickActive) return;
+  const touch = e.touches[0];
+  const rect = joystickZone.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  
+  let dx = touch.clientX - centerX;
+  let dy = touch.clientY - centerY;
+  const dist = Math.min(60, Math.sqrt(dx*dx + dy*dy));
+  const angle = Math.atan2(dy, dx);
+  
+  const moveX = Math.cos(angle) * dist;
+  const moveY = Math.sin(angle) * dist;
+  
+  joystickKnob.style.transform = `translate(calc(-50% + ${moveX}px), calc(-50% + ${moveY}px))`;
+  joystickVector.set(moveX / 60, moveY / 60);
+}, {passive: false});
 
-function resetJoystick() {
-  joystick.active = false;
-  joystick.delta.set(0, 0);
-  joystickKnob.style.transform = 'translate(-50%, -50%)';
-}
-window.addEventListener('touchend',    e => { for (const t of e.changedTouches) if (t.identifier === joystick.id) resetJoystick(); }, { passive: true });
-window.addEventListener('touchcancel', e => { for (const t of e.changedTouches) if (t.identifier === joystick.id) resetJoystick(); }, { passive: true });
+window.addEventListener('touchend', () => {
+  joystickActive = false;
+  joystickVector.set(0, 0);
+  joystickKnob.style.transform = `translate(-50%, -50%)`;
+});
 
-/* ─── HUD refs ───────────────────────────────────────── */
-const posHud = document.getElementById('pos-hud');
-let   hudTimer = 0;
-
-/* ─── Animation loop ─────────────────────────────────── */
+/* ─── Main Loop ────────────────────────────────────── */
+const velocity = new THREE.Vector3();
+const speed = 0.6;
+const friction = 0.95;
 const clock = new THREE.Clock();
 
 function animate() {
   requestAnimationFrame(animate);
+  const dt = clock.getDelta();
 
-  const delta = clock.getDelta();
+  // 1. Movement Input
+  const input = new THREE.Vector3();
+  if (keys['KeyW'] || keys['ArrowUp']) input.z -= 1;
+  if (keys['KeyS'] || keys['ArrowDown']) input.z += 1;
+  if (keys['KeyA'] || keys['ArrowLeft']) input.x -= 1;
+  if (keys['KeyD'] || keys['ArrowRight']) input.x += 1;
+  if (keys['Space']) input.y += 1;
+  if (keys['ShiftLeft']) input.y -= 1;
 
-  /* --- Rotate star field slowly --- */
-  stars.rotation.x += 0.00005;
-  stars.rotation.y += 0.00005;
+  // Add joystick to input
+  input.x += joystickVector.x;
+  input.z += joystickVector.y;
 
-  /* --- Compute desired movement from keyboard --- */
-  const move = new THREE.Vector3();
+  if (input.length() > 0) input.normalize().multiplyScalar(speed);
 
-  if (keys['KeyW'] || keys['ArrowUp'])    move.z -= 1;
-  if (keys['KeyS'] || keys['ArrowDown'])  move.z += 1;
-  if (keys['KeyA'] || keys['ArrowLeft'])  move.x -= 1;
-  if (keys['KeyD'] || keys['ArrowRight']) move.x += 1;
-  if (keys['Space'])                      move.y += 1;
-  if (keys['ShiftLeft'] || keys['ShiftRight']) move.y -= 1;
+  // 2. Apply Velocity
+  velocity.add(input);
+  velocity.multiplyScalar(friction);
+  playerGroup.position.add(velocity);
+  playerLight.position.copy(playerGroup.position);
 
-  /* --- Add joystick input --- */
-  if (joystick.active) {
-    move.x += joystick.delta.x;
-    move.z += joystick.delta.y;
+  // 3. Update Trail
+  trailHistory.push(playerGroup.position.clone());
+  if (trailHistory.length > MAX_TRAIL_POINTS) trailHistory.shift();
+
+  const posAttr = trailGeo.attributes.position;
+  for (let i = 0; i < MAX_TRAIL_POINTS; i++) {
+    const point = trailHistory[i] || playerGroup.position;
+    posAttr.setXYZ(i, point.x, point.y, point.z);
   }
+  posAttr.needsUpdate = true;
 
-  /* --- Normalize diagonal movement --- */
-  if (move.lengthSq() > 0) move.normalize();
+  // 4. Camera Logic
+  // Camera follows behind player with a slight lag (lerp)
+  const idealOffset = new THREE.Vector3(mouseX * 10, 5 + (-mouseY * 10), 15);
+  const targetCamPos = playerGroup.position.clone().add(idealOffset);
+  camera.position.lerp(targetCamPos, 0.1);
+  camera.lookAt(playerGroup.position);
 
-  /* --- Apply camera-relative direction (yaw only) --- */
-  const yaw = Math.atan2(
-    camera.position.x - player.position.x,
-    camera.position.z - player.position.z,
-  );
-  move.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+  // 5. Background Follow (Infinite effect)
+  starField.position.copy(playerGroup.position).multiplyScalar(0.9); // Parallax
+  starField.rotation.y += 0.0005;
 
-  /* --- Smooth velocity damping --- */
-  playerVel.lerp(move.multiplyScalar(SPEED), 0.18);
-  player.position.add(playerVel);
-
-  /* --- Update tail trail --- */
-  tailHistory.unshift(player.position.clone());
-  if (tailHistory.length > TAIL_LENGTH) tailHistory.pop();
-  const tailPosAttr = tailGeo.attributes.position;
-  for (let i = 0; i < TAIL_LENGTH; i++) {
-    const tp = i < tailHistory.length ? tailHistory[i] : player.position;
-    tailPosAttr.setXYZ(i, tp.x, tp.y, tp.z);
-  }
-  tailPosAttr.needsUpdate = true;
-
-  /* --- Rotate player mesh to face direction of travel --- */
-  if (playerVel.lengthSq() > 0.00001) {
-    const target = player.position.clone().add(playerVel);
-    player.lookAt(target);
-  }
-
-  /* --- Camera follows player smoothly with mouse influence --- */
-  const mouseOffsetX = (mouseX / innerWidth - 0.5) * 8;
-  const mouseOffsetY = (mouseY / innerHeight - 0.5) * 8;
-  const desiredCamPos = player.position.clone().add(CAM_OFFSET);
-  desiredCamPos.x += mouseOffsetX;
-  desiredCamPos.y -= mouseOffsetY;
-  camera.position.lerp(desiredCamPos, 0.08);
-  camera.lookAt(player.position);
-
-  /* --- Point light tracks player --- */
-  pointLight.position.copy(player.position);
-
-  /* --- Pulse glow --- */
-  const pulse = 1 + 0.25 * Math.sin(clock.getElapsedTime() * 3);
-  glowSprite.scale.set(6 * pulse, 6 * pulse, 1);
-
-  /* --- Update shooting stars --- */
-  for (const s of shootingStars) {
-    s.position.addScaledVector(s.velocity, delta);
-    s.material.opacity = Math.max(0, s.material.opacity - delta * 0.3);
-  }
-
-  /* --- HUD update (every ~0.1 s to avoid layout thrash) --- */
-  hudTimer += delta;
-  if (hudTimer > 0.1) {
-    hudTimer = 0;
-    const p = player.position;
-    posHud.textContent = `Position: ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}`;
-  }
+  // 6. HUD update
+  const p = playerGroup.position;
+  document.getElementById('pos-hud').innerText = `Position: ${Math.floor(p.x)}, ${Math.floor(p.y)}, ${Math.floor(p.z)}`;
 
   renderer.render(scene, camera);
 }
+
+// Handle Resize
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
 
 animate();
 </script>
