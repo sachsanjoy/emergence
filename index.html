@@ -3,241 +3,249 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Starfly 3D – Dual Stick Navigation</title>
+  <title>Starfly – Smooth 3D Navigation</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    body { margin: 0; background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+    body { margin: 0; background: #000; overflow: hidden; font-family: 'Inter', sans-serif; }
     canvas { display: block; }
 
     /* HUD */
     #hud {
       position: fixed;
-      top: 20px;
-      left: 20px;
+      top: 25px;
+      left: 25px;
       z-index: 100;
       pointer-events: none;
-      text-shadow: 0 0 10px rgba(0, 150, 255, 0.8);
     }
 
-    /* Joystick Containers */
-    .joystick-container {
+    /* Left Joystick: Rotation */
+    #joy-container {
       position: fixed;
-      bottom: 40px;
-      width: 120px;
-      height: 120px;
+      bottom: 50px;
+      left: 50px;
+      width: 130px;
+      height: 130px;
       background: rgba(255, 255, 255, 0.05);
-      border: 2px solid rgba(255, 215, 0, 0.2);
+      border: 1px solid rgba(255, 215, 0, 0.2);
       border-radius: 50%;
       touch-action: none;
       z-index: 1000;
     }
-    #left-ctrl { left: 40px; }
-    #right-ctrl { right: 40px; }
-
-    .knob {
+    #joy-knob {
       position: absolute;
       width: 50px;
       height: 50px;
-      background: radial-gradient(circle, #fff 0%, #ffcc00 100%);
+      background: radial-gradient(circle, #fff, #ffcc00);
       border-radius: 50%;
       top: 50%; left: 50%;
       transform: translate(-50%, -50%);
-      box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+      box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
       pointer-events: none;
+    }
+
+    /* Right Button: Thrust */
+    #thrust-btn {
+      position: fixed;
+      bottom: 60px;
+      right: 60px;
+      width: 100px;
+      height: 100px;
+      background: rgba(255, 215, 0, 0.15);
+      border: 2px solid #ffcc00;
+      border-radius: 50%;
+      color: #ffcc00;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      user-select: none;
+      z-index: 1000;
+      box-shadow: 0 0 15px rgba(255, 215, 0, 0.2);
+      transition: background 0.2s, transform 0.1s;
+    }
+    #thrust-btn:active {
+      background: rgba(255, 215, 0, 0.4);
+      transform: scale(0.95);
     }
 
     .label {
       position: absolute;
       width: 100%;
+      bottom: -35px;
       text-align: center;
-      bottom: -30px;
-      color: #ffcc00;
       font-size: 10px;
+      color: #ffcc00;
       letter-spacing: 1px;
-      text-transform: uppercase;
+      opacity: 0.7;
     }
   </style>
 </head>
 <body>
 
 <div id="hud">
-  <div class="text-2xl font-bold text-amber-400 tracking-tighter">STARFLY</div>
-  <div id="pos-display" class="text-blue-300 font-mono text-xs mt-1">POS: 0, 0, 0</div>
+  <div class="text-2xl font-black text-amber-400 tracking-tighter italic">STARFLY</div>
+  <div id="pos-display" class="text-blue-300 font-mono text-xs opacity-60">X: 0 Y: 0 Z: 0</div>
 </div>
 
-<!-- Left Joystick: Up/Down/Left/Right -->
-<div id="left-ctrl" class="joystick-container">
-  <div id="left-knob" class="knob"></div>
-  <div class="label">Move & Elevate</div>
+<!-- Steering -->
+<div id="joy-container">
+  <div id="joy-knob"></div>
+  <div class="label">STEER (360°)</div>
 </div>
 
-<!-- Right Joystick: In/Out -->
-<div id="right-ctrl" class="joystick-container">
-  <div id="right-knob" class="knob"></div>
-  <div class="label">Forward / Back</div>
-</div>
+<!-- Movement -->
+<div id="thrust-btn">Thrust</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
 'use strict';
 
-/* ─── Scene Setup ───────────────────────────────────── */
+/* ─── Scene & Camera ───────────────────────────────── */
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x000000, 0.001);
-
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 3000);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 4000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 document.body.appendChild(renderer.domElement);
 
-/* ─── Background Starfield (Particle System) ───────── */
-const starCount = 8000;
+/* ─── Star Particle System ─────────────────────────── */
+const starCount = 6000;
 const starGeo = new THREE.BufferGeometry();
 const starPos = new Float32Array(starCount * 3);
-for (let i = 0; i < starCount * 3; i++) starPos[i] = (Math.random() - 0.5) * 2500;
+for (let i = 0; i < starCount * 3; i++) {
+    starPos[i] = (Math.random() - 0.5) * 3000;
+}
 starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.2, transparent: true, opacity: 0.8 });
+const starMat = new THREE.PointsMaterial({ 
+    color: 0xffffff, 
+    size: 1.5, 
+    transparent: true, 
+    opacity: 0.8,
+    sizeAttenuation: true 
+});
 const stars = new THREE.Points(starGeo, starMat);
 scene.add(stars);
 
-/* ─── Player Star (Golden-White) ────────────────────── */
+/* ─── Player (Golden-White Star) ───────────────────── */
 const playerGroup = new THREE.Group();
 scene.add(playerGroup);
 
+// Core
 const core = new THREE.Mesh(
-    new THREE.SphereGeometry(0.6, 24, 24),
+    new THREE.SphereGeometry(0.5, 32, 32),
     new THREE.MeshBasicMaterial({ color: 0xffffff })
 );
 playerGroup.add(core);
 
+// Glow
 const canvas = document.createElement('canvas');
 canvas.width = 64; canvas.height = 64;
 const ctx = canvas.getContext('2d');
 const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
-grad.addColorStop(0.2, 'rgba(255, 215, 0, 0.8)');
-grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+grad.addColorStop(0, 'white');
+grad.addColorStop(0.3, '#ffcc00');
+grad.addColorStop(1, 'transparent');
 ctx.fillStyle = grad; ctx.fillRect(0, 0, 64, 64);
 const glowMap = new THREE.CanvasTexture(canvas);
 
 const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowMap, blending: THREE.AdditiveBlending }));
-glow.scale.set(8, 8, 1);
+glow.scale.set(7, 7, 1);
 playerGroup.add(glow);
 
-const pLight = new THREE.PointLight(0xffcc00, 2, 60);
-playerGroup.add(pLight);
+const light = new THREE.PointLight(0xffcc00, 2, 50);
+playerGroup.add(light);
 
-/* ─── Shooting Stars ────────────────────────────────── */
-const shootingStars = [];
-function createShootingStar() {
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0,0,0, 0,0,2]), 3));
-    const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true });
-    const line = new THREE.Line(geo, mat);
-    line.position.set((Math.random()-0.5)*1000, (Math.random()-0.5)*1000, (Math.random()-0.5)*1000);
-    line.velocity = new THREE.Vector3((Math.random()-0.5)*50, (Math.random()-0.5)*50, (Math.random()-0.5)*50);
-    scene.add(line);
-    shootingStars.push(line);
-}
+/* ─── Navigation Logic ─────────────────────────────── */
+let thrustActive = false;
+let rotationInput = new THREE.Vector2(0, 0);
 
-/* ─── Input Logic ───────────────────────────────────── */
-const keys = {};
-window.addEventListener('keydown', e => keys[e.code] = true);
-window.addEventListener('keyup', e => keys[e.code] = false);
+// Joystick Logic (Rotation)
+const joyContainer = document.getElementById('joy-container');
+const joyKnob = document.getElementById('joy-knob');
 
-const leftInput = new THREE.Vector2();  // x, y
-const rightInput = new THREE.Vector2(); // y used for z-axis
-
-function handleJoystick(id, knobId, inputVec) {
-    const el = document.getElementById(id);
-    const knob = document.getElementById(knobId);
+function handleJoystick(e) {
+    e.preventDefault();
+    const touch = e.touches ? e.touches[0] : e;
+    const rect = joyContainer.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
     
-    const handleMove = (e) => {
-        const touch = e.touches ? e.touches[0] : e;
-        const rect = el.getBoundingClientRect();
-        const center = { x: rect.left + 60, y: rect.top + 60 };
-        let dx = touch.clientX - center.x;
-        let dy = touch.clientY - center.y;
-        const dist = Math.min(50, Math.sqrt(dx*dx + dy*dy));
-        const angle = Math.atan2(dy, dx);
-        
-        const moveX = Math.cos(angle) * dist;
-        const moveY = Math.sin(angle) * dist;
-        
-        knob.style.transform = `translate(calc(-50% + ${moveX}px), calc(-50% + ${moveY}px))`;
-        inputVec.set(moveX / 50, -moveY / 50); // Normalize to -1 to 1
-    };
-
-    const handleEnd = () => {
-        knob.style.transform = `translate(-50%, -50%)`;
-        inputVec.set(0, 0);
-    };
-
-    el.addEventListener('touchstart', e => { e.preventDefault(); handleMove(e); }, {passive: false});
-    window.addEventListener('touchmove', e => { if(inputVec.lengthSq() > 0 || e.target === el) handleMove(e); }, {passive: false});
-    window.addEventListener('touchend', handleEnd);
+    let dx = touch.clientX - centerX;
+    let dy = touch.clientY - centerY;
+    const dist = Math.min(50, Math.sqrt(dx*dx + dy*dy));
+    const angle = Math.atan2(dy, dx);
+    
+    const moveX = Math.cos(angle) * dist;
+    const moveY = Math.sin(angle) * dist;
+    
+    joyKnob.style.transform = `translate(calc(-50% + ${moveX}px), calc(-50% + ${moveY}px))`;
+    
+    // Y stick controls Pitch, X stick controls Yaw
+    rotationInput.set(-moveY / 50, -moveX / 50); 
 }
 
-handleJoystick('left-ctrl', 'left-knob', leftInput);
-handleJoystick('right-ctrl', 'right-knob', rightInput);
+function resetJoystick() {
+    joyKnob.style.transform = `translate(-50%, -50%)`;
+    rotationInput.set(0, 0);
+}
+
+joyContainer.addEventListener('touchstart', handleJoystick);
+window.addEventListener('touchmove', (e) => { if(e.target === joyContainer || e.touches.length > 0) handleJoystick(e); });
+window.addEventListener('touchend', resetJoystick);
+
+// Thrust Logic (Movement)
+const thrustBtn = document.getElementById('thrust-btn');
+thrustBtn.addEventListener('mousedown', () => thrustActive = true);
+thrustBtn.addEventListener('touchstart', (e) => { e.preventDefault(); thrustActive = true; });
+window.addEventListener('mouseup', () => thrustActive = false);
+window.addEventListener('touchend', () => thrustActive = false);
 
 /* ─── Animation Loop ────────────────────────────────── */
 const velocity = new THREE.Vector3();
-const speed = 0.8;
-const friction = 0.92;
+const rotationEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+const moveSpeed = 0.5;
+const rotateSpeed = 0.04;
+const damping = 0.96;
 
 function animate() {
     requestAnimationFrame(animate);
 
-    // 1. Keyboard Inputs
-    const move = new THREE.Vector3();
-    if (keys['KeyW']) move.z -= 1;
-    if (keys['KeyS']) move.z += 1;
-    if (keys['KeyA']) move.x -= 1;
-    if (keys['KeyD']) move.x += 1;
-    if (keys['Space']) move.y += 1;
-    if (keys['ShiftLeft']) move.y -= 1;
+    // 1. Handle Rotation (Steering)
+    // We update an Euler object for smooth 360 rotation
+    rotationEuler.x += rotationInput.x * rotateSpeed;
+    rotationEuler.y += rotationInput.y * rotateSpeed;
+    playerGroup.setRotationFromEuler(rotationEuler);
 
-    // 2. Joystick Inputs (Override or Add)
-    move.x += leftInput.x;
-    move.y += leftInput.y;
-    move.z -= rightInput.y; // Right stick Y controls Z axis
+    // 2. Handle Thrust (Movement)
+    if (thrustActive) {
+        // Get the direction the player is currently facing
+        const direction = new THREE.Vector3(0, 0, -1);
+        direction.applyQuaternion(playerGroup.quaternion);
+        velocity.add(direction.multiplyScalar(moveSpeed));
+    }
 
-    if (move.length() > 0) move.normalize().multiplyScalar(speed);
-
-    // 3. Physics
-    velocity.add(move);
-    velocity.multiplyScalar(friction);
+    // 3. Apply Velocity & Friction
     playerGroup.position.add(velocity);
+    velocity.multiplyScalar(damping);
 
-    // 4. Camera Follow
-    const camTarget = new THREE.Vector3(
-        playerGroup.position.x,
-        playerGroup.position.y + 4,
-        playerGroup.position.z + 12
-    );
-    camera.position.lerp(camTarget, 0.1);
+    // 4. Smooth Camera Follow
+    // Camera stays behind the player's current orientation
+    const relativeCameraOffset = new THREE.Vector3(0, 3, 15);
+    const cameraOffset = relativeCameraOffset.applyQuaternion(playerGroup.quaternion);
+    const targetCamPos = playerGroup.position.clone().add(cameraOffset);
+    
+    camera.position.lerp(targetCamPos, 0.1);
     camera.lookAt(playerGroup.position);
 
-    // 5. Star Parallax (Infinite Feel)
+    // 5. Parallax Stars
     stars.position.copy(playerGroup.position).multiplyScalar(0.9);
-    
-    // 6. Shooting Stars
-    if (Math.random() < 0.05) createShootingStar();
-    shootingStars.forEach((s, i) => {
-        s.position.add(s.velocity);
-        s.material.opacity -= 0.01;
-        if (s.material.opacity <= 0) {
-            scene.remove(s);
-            shootingStars.splice(i, 1);
-        }
-    });
 
-    // 7. Update HUD
+    // 6. Update HUD
     const p = playerGroup.position;
-    document.getElementById('pos-display').innerText = `POS: ${Math.round(p.x)}, ${Math.round(p.y)}, ${Math.round(p.z)}`;
+    document.getElementById('pos-display').innerText = `X:${Math.round(p.x)} Y:${Math.round(p.y)} Z:${Math.round(p.z)}`;
 
     renderer.render(scene, camera);
 }
@@ -250,6 +258,5 @@ window.addEventListener('resize', () => {
 
 animate();
 </script>
-
 </body>
 </html>
